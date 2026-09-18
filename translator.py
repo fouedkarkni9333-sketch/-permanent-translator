@@ -15,14 +15,34 @@ HTML_TEMPLATE = """
         select { padding: 10px; border-radius: 6px; margin-top: 5px; width: 100%; background: #334155; color: white; border: none; font-size: 14px; }
         .result-box { background: #0f172a; padding: 12px; border-radius: 6px; margin-top: 15px; text-align: right; border: 1px solid #334155; font-size: 14px; }
         .clean-trans { direction: ltr; text-align: left; font-weight: bold; color: #4ade80; margin-top: 5px; font-size: 16px; }
-        .pulse-indicator { display: inline-block; width: 12px; height: 12px; background: #10b981; border-radius: 50%; margin-left: 8px; animation: pulse 0.8s infinite; }
+        
+        .control-btn {
+            background-color: #ef4444;
+            color: white;
+            border: none;
+            padding: 12px 24px;
+            font-size: 16px;
+            font-weight: bold;
+            border-radius: 30px;
+            cursor: pointer;
+            margin-top: 12px;
+            width: 100%;
+            box-shadow: 0 4px 10px rgba(0,0,0,0.3);
+            transition: 0.3s;
+        }
+        .control-btn.active {
+            background-color: #10b981;
+        }
+
+        .pulse-indicator { display: inline-block; width: 12px; height: 12px; background: #ef4444; border-radius: 50%; margin-left: 8px; }
+        .pulse-indicator.active { background: #10b981; animation: pulse 0.8s infinite; }
         @keyframes pulse { 0% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.3); opacity: 0.5; } 100% { transform: scale(1); opacity: 1; } }
     </style>
 </head>
-<body onload="startEngine()">
+<body>
     <div class="card">
         <h2>المترجم الذكي السريع ⚡</h2>
-        <p style="color: #94a3b8; font-size: 12px;">دقة الذكاء الاصطناعي في فهم الدارجة + سرعة البرق</p>
+        <p style="color: #94a3b8; font-size: 12px;">تحكم كامل بالميكروفون ومكبر الصوت العالي</p>
         
         <label style="display:block; text-align:right; margin-top:8px;">لغة التحدث:</label>
         <select id="srcLang">
@@ -40,8 +60,14 @@ HTML_TEMPLATE = """
             <option value="de">الألمانية (German)</option>
         </select>
 
+        <!-- زر تشغيل وإيقاف الميكروفون -->
+        <button id="micToggleBtn" class="control-btn" onclick="toggleEngine()">🎤 تشغيل الميكروفون</button>
+
+        <!-- زر تشغيل وإيقاف مكبر الصوت -->
+        <button id="speakerToggleBtn" class="control-btn active" onclick="toggleSpeaker()" style="background-color: #10b981;">🔊 مكبر الصوت: مفعل</button>
+
         <div class="result-box">
-            <div id="statusText" style="color: #38bdf8;"><span class="pulse-indicator"></span> مكالمة حية تعمل الآن... تحدث بحرية</div>
+            <div id="statusText" style="color: #94a3b8;"><span id="statusDot" class="pulse-indicator"></span> الميكروفون متوقف</div>
             <div id="originalText" style="color: #cbd5e1; margin-top: 8px;">النص: -</div>
             <div style="margin-top: 8px;">الترجمة:</div>
             <div id="translatedText" class="clean-trans">-</div>
@@ -50,8 +76,53 @@ HTML_TEMPLATE = """
 
     <script>
         let recognition = null;
-        let isRunning = true;
+        let isRunning = false;
+        let isSpeakerOn = true;
         const translationCache = {};
+
+        function toggleEngine() {
+            if (isRunning) {
+                stopEngine();
+            } else {
+                startEngine();
+            }
+        }
+
+        function toggleSpeaker() {
+            isSpeakerOn = !isSpeakerOn;
+            const btn = document.getElementById('speakerToggleBtn');
+            if (isSpeakerOn) {
+                btn.innerText = "🔊 مكبر الصوت: مفعل";
+                btn.classList.add('active');
+                btn.style.backgroundColor = "#10b981";
+            } else {
+                btn.innerText = "🔇 مكبر الصوت: معطل";
+                btn.classList.remove('active');
+                btn.style.backgroundColor = "#ef4444";
+                window.speechSynthesis.cancel();
+            }
+        }
+
+        function speakText(text, lang) {
+            if (!isSpeakerOn) return;
+            
+            window.speechSynthesis.cancel();
+            
+            // استخدام Google TTS API الصوتي المباشر عبر ملفات صوتية لتحقيق أعلى وأقوى صوت ممكن عبر مكبر الهاتف الخارجي
+            const audioUrl = `https://translate.google.com/translate_tts?ie=UTF-8&q=${encodeURIComponent(text)}&tl=${lang}&client=tw-ob`;
+            const audio = new Audio(audioUrl);
+            audio.volume = 1.0; // أقصى درجة صوت مسموحة
+            
+            audio.play().catch(error => {
+                // الطريقة الاحتياطية المدمجة في المتصفح إذا تعذر التشغيل المباشر
+                const utterance = new SpeechSynthesisUtterance(text);
+                utterance.lang = lang === 'ar' ? 'ar-SA' : lang;
+                utterance.volume = 1.0;
+                utterance.rate = 1.0;
+                utterance.pitch = 1.0;
+                window.speechSynthesis.speak(utterance);
+            });
+        }
 
         function startEngine() {
             const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
@@ -67,7 +138,6 @@ HTML_TEMPLATE = """
             recognition = new SpeechRecognition();
             recognition.lang = document.getElementById('srcLang').value === 'ar' ? 'ar-SA' : document.getElementById('srcLang').value;
             
-            // خصائص متقدمة لتصفية الضوضاء والرياح وعزل أصوات البيئة الخارجية التركيز على صوت الحريف فقط
             recognition.interimResults = true;
             recognition.continuous = true;
             if (typeof recognition.maxAlternatives !== 'undefined') {
@@ -76,11 +146,19 @@ HTML_TEMPLATE = """
 
             document.getElementById('srcLang').onchange = function() {
                 recognition.lang = this.value === 'ar' ? 'ar-SA' : this.value;
-                restartEngine();
+                if (isRunning) {
+                    stopEngine();
+                    startEngine();
+                }
             };
 
             recognition.onstart = function() {
-                document.getElementById('statusText').innerHTML = '<span class="pulse-indicator"></span> مكالمة حية تعمل الآن... تحدث بحرية';
+                isRunning = true;
+                const btn = document.getElementById('micToggleBtn');
+                btn.innerText = "🛑 إيقاف الميكروفون";
+                btn.classList.add('active');
+                
+                document.getElementById('statusText').innerHTML = '<span id="statusDot" class="pulse-indicator active"></span> مكالمة حية تعمل الآن... تحدث بحرية';
             };
 
             recognition.onresult = async function(event) {
@@ -89,14 +167,12 @@ HTML_TEMPLATE = """
                 let spokenText = resultItem[0].transcript.trim();
                 
                 if (!spokenText) return;
-
-                // تصفية الكلمات الوهمية الناتجة عن الضوضاء العشوائية أو العصافير
                 if (spokenText.length < 2 && !/[أ-يa-zA-Z]/.test(spokenText)) return;
 
                 document.getElementById('originalText').innerText = `النص: ${spokenText}`;
 
                 if (resultItem.isFinal) {
-                    document.getElementById('statusText').innerHTML = '<span class="pulse-indicator"></span> جاري المعالجة الفورية...';
+                    document.getElementById('statusText').innerHTML = '<span id="statusDot" class="pulse-indicator active"></span> جاري المعالجة الفورية...';
 
                     const srcVal = document.getElementById('srcLang').value;
                     const tgtVal = document.getElementById('tgtLang').value;
@@ -128,12 +204,10 @@ HTML_TEMPLATE = """
                     if (!translation) translation = "عذراً، لم تكتمل الترجمة";
 
                     document.getElementById('translatedText').innerText = translation;
-                    document.getElementById('statusText').innerHTML = '<span class="pulse-indicator"></span> بانتظار رد الطرف الآخر...';
+                    document.getElementById('statusText').innerHTML = '<span id="statusDot" class="pulse-indicator active"></span> بانتظار رد الطرف الآخر...';
 
-                    window.speechSynthesis.cancel();
-                    const utterance = new SpeechSynthesisUtterance(translation);
-                    utterance.lang = tgtVal === 'ar' ? 'ar-SA' : tgtVal;
-                    window.speechSynthesis.speak(utterance);
+                    // تشغيل الصوت بقوة عبر مكبر الصوت الخارجي
+                    speakText(translation, tgtVal);
                 }
             };
 
@@ -143,7 +217,9 @@ HTML_TEMPLATE = """
 
             recognition.onend = function() {
                 if (isRunning) {
-                    setTimeout(restartEngine, 50);
+                    setTimeout(() => {
+                        try { if (isRunning) recognition.start(); } catch(e) {}
+                    }, 50);
                 }
             };
 
@@ -151,24 +227,20 @@ HTML_TEMPLATE = """
                 recognition.start();
                 isRunning = true;
             } catch (e) {
-                window.addEventListener('click', function unlock() {
-                    restartEngine();
-                    window.removeEventListener('click', unlock);
-                }, { once: true });
+                console.log(e);
             }
         }
 
-        function restartEngine() {
-            try {
-                if (recognition) {
-                    recognition.stop();
-                }
-            } catch(e) {}
-            setTimeout(() => {
-                try {
-                    if (isRunning) recognition.start();
-                } catch(e) {}
-            }, 50);
+        function stopEngine() {
+            isRunning = false;
+            if (recognition) {
+                try { recognition.stop(); } catch(e) {}
+            }
+            const btn = document.getElementById('micToggleBtn');
+            btn.innerText = "🎤 تشغيل الميكروفون";
+            btn.classList.remove('active');
+            
+            document.getElementById('statusText').innerHTML = '<span id="statusDot" class="pulse-indicator"></span> الميكروفون متوقف';
         }
     </script>
 </body>
